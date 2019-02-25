@@ -1,0 +1,295 @@
+include HT66F50.inc
+
+ds	.section	'data'
+
+STACK_A		DB		?
+STACK_PSW	DB		?
+COUNT		DB		11	DUP(?)
+LCM_EN		EQU		PB0
+LCM_ENC		EQU		PBC0
+LCM_RW		EQU		PB1
+LCM_RWC		EQU		PBC1
+LCM_RS		EQU		PB2
+LCM_RSC		EQU		PBC2
+LCM_PORT	EQU		PC
+LCM_PORTC	EQU		PCC
+DEL1  		DB		?
+DEL2  		DB 		?
+DEL3		DB		?
+DC_FLAG		DBIT
+FG			DBIT	
+
+cs	.section	at  000H	'code'
+			ORG     00H
+			JMP		MAIN
+			ORG		1CH
+			JMP		ISR_ADC
+;===================================
+MAIN:
+			CALL	SETUP1
+			CALL	RUN
+			JMP		$-1
+;===================================
+SETUP1		PROC
+			MOV		A,08H
+			MOV		CP0C,A
+			MOV		CP1C,A
+			CALL	INIT_LCM
+			RET
+SETUP1		ENDP
+;===================================
+RUN			PROC
+			SNZ		FG
+			JMP		$+2
+			JMP		$+3
+			SET		FG
+			JMP		$+2
+			CLR		FG	
+			SZ		FG
+			JMP		$+8
+			MOV		A,00000000B	;第1組AD
+			MOV		ADCR0,A 
+			MOV		A,00000010B
+			MOV		ADCR1,A
+ 			MOV		A,00000001B
+ 			MOV		ACERL,A
+ 			JMP		$+7
+ 			MOV		A,00000001B	;第2組AD
+			MOV		ADCR0,A
+			MOV		A,00000010B
+			MOV		ADCR1,A
+ 			MOV		A,00000010B
+ 			MOV		ACERL,A
+			SET		ADE
+			SET		EMI
+			SET		START
+			CLR		START
+			RET
+RUN			ENDP
+;===================================
+ISR_ADC		PROC
+			MOV		STACK_A,A
+			MOV		A,STATUS
+			MOV		STACK_PSW,A
+			MOV		A,ADRH
+			MOV		COUNT[0],A
+			SZ		FG
+			JMP		$+3
+			CALL	DIVIDE1
+			JMP		$+2
+			CALL	DIVIDE2
+			MOV		A,STACK_PSW
+			MOV		STATUS,A
+			MOV		A,STACK_A
+			RETI
+ISR_ADC		ENDP
+;===================================
+INIT_LCM	PROC
+			CLR		LCM_EN
+			CLR		LCM_RW
+			CLR		LCM_RS
+			CLR		LCM_ENC
+			CLR		LCM_RWC
+			CLR		LCM_RSC
+			CALL	DELAY
+			MOV		A,38H
+			CALL   	WLCMC
+			MOV		A,0FH
+			CALL   	WLCMC
+			MOV		A,06H
+			CALL   	WLCMC
+			MOV		A,01H
+			CALL   	WLCMC
+			RET
+INIT_LCM 	ENDP
+;===================================
+WLCMD		PROC
+			SET		DC_FLAG
+			JMP   	$+2
+WLCMC:		CLR		DC_FLAG
+			SET		LCM_PORTC
+			CLR		LCM_RS
+			SET	 	LCM_RW
+			NOP
+			SET	 	LCM_EN
+			NOP
+WF:			SZ		LCM_PORT.7
+			JMP		WF
+			CLR	 	LCM_EN
+			CLR		LCM_PORTC
+			MOV		LCM_PORT,A
+			CLR		LCM_RW
+			CLR		LCM_RS
+			SZ		DC_FLAG
+			SET	 	LCM_RS
+			SET		LCM_EN
+			NOP
+			CLR	 	LCM_EN
+			RET
+WLCMD		ENDP
+;===================================
+DIVIDE1		PROC
+			CLR		COUNT[1]
+			CLR		COUNT[4]
+			CLR		COUNT[5]
+			MOV		A,COUNT[0]
+			SUB		A,51
+			SNZ		C
+			JMP		$+3
+			INC		COUNT[1]	;個位數
+			JMP		$-4
+			ADD		A,51
+			MOV		COUNT[2],A
+			MOV		A,10
+			MOV		COUNT[3],A	;加10遍
+			CLR		ACC
+			ADD		A,COUNT[2]
+			SDZ		COUNT[3]
+			JMP		$-2
+			SUB		A,51
+			SNZ		C
+			JMP		$+3
+			INC		COUNT[4]	;小數第1位
+			JMP		$-4
+			ADD		A,51
+			MOV		COUNT[2],A
+			MOV		A,10
+			MOV		COUNT[3],A	;加10遍
+			CLR		ACC
+			ADD		A,COUNT[2]
+			SDZ		COUNT[3]
+			JMP		$-2
+			SUB		A,51
+			SNZ		C
+			JMP		$+3
+			INC		COUNT[5]	;小數第2位
+			JMP		$-4
+			MOV		A,01H	;清空
+			CALL	WLCMC
+			MOV		A,80H	;第一行第一個位置
+			CALL	WLCMC
+			MOV		A,30H
+			ADD		A,COUNT[1]
+			CALL	WLCMD
+			MOV		A,2EH	;.
+			CALL	WLCMD
+			MOV		A,30H
+			ADD		A,COUNT[4]
+			CALL	WLCMD
+			MOV		A,30H
+			ADD		A,COUNT[5]
+			CALL	WLCMD
+			MOV		A,56H	;V
+			CALL	WLCMD
+			MOV		A,20H	;空格
+			CALL	WLCMD
+			RET
+DIVIDE1		ENDP
+;===================================
+DIVIDE2		PROC
+			CLR		COUNT[6]
+			CLR		COUNT[7]
+			CLR		COUNT[8]
+			MOV		A,COUNT[0]
+			SUB		A,51
+			SNZ		C
+			JMP		$+3
+			INC		COUNT[6]	;個位數
+			JMP		$-4
+			ADD		A,51
+			MOV		COUNT[2],A
+			MOV		A,10
+			MOV		COUNT[3],A	;加10遍
+			CLR		ACC
+			ADD		A,COUNT[2]
+			SDZ		COUNT[3]
+			JMP		$-2
+			SUB		A,51
+			SNZ		C
+			JMP		$+3
+			INC		COUNT[7]	;小數第1位
+			JMP		$-4
+			ADD		A,51
+			MOV		COUNT[2],A
+			MOV		A,10
+			MOV		COUNT[3],A	;加10遍
+			CLR		ACC
+			ADD		A,COUNT[2]
+			SDZ		COUNT[3]
+			JMP		$-2
+			SUB		A,51
+			SNZ		C
+			JMP		$+3
+			INC		COUNT[8]	;小數第2位
+			JMP		$-4
+			MOV		A,30H
+			ADD		A,COUNT[6]
+			CALL	WLCMD
+			MOV		A,2EH	;.
+			CALL	WLCMD
+			MOV		A,30H
+			ADD		A,COUNT[7]
+			CALL	WLCMD
+			MOV		A,30H
+			ADD		A,COUNT[8]
+			CALL	WLCMD
+			MOV		A,56H	;V
+			CALL	WLCMD
+			CALL	DOWN
+			CALL	DELAY
+			RET
+DIVIDE2		ENDP
+;===================================
+DOWN		PROC
+			MOV		A,10
+			MOV		COUNT[9],A	;加10遍
+			CLR		ACC
+			ADD		A,COUNT[1]
+			SDZ		COUNT[9]
+			JMP		$-2
+			MOV		COUNT[1],A
+			MOV		A,10
+			MOV		COUNT[9],A	;加10遍
+			CLR		ACC
+			ADD		A,COUNT[6]
+			SDZ		COUNT[9]
+			JMP		$-2
+			MOV		COUNT[6],A
+			MOV		A,COUNT[6]
+			ADDM	A,COUNT[1]
+			CLR		COUNT[10]
+			MOV		A,0
+			XOR		A,COUNT[1]
+			SZ		Z
+			JMP		$+13
+			MOV		A,COUNT[1]
+			SUB		A,6
+			SNZ		C
+			JMP		$+3
+			INC		COUNT[10]	;格子數
+			JMP		$-4
+			MOV		A,0C0H	;第二行第一個位置
+			CALL	WLCMC
+			MOV		A,0FFH
+			CALL	WLCMD
+			SDZ		COUNT[10]
+			JMP		$-3
+			RET
+DOWN		ENDP
+;===================================
+DELAY		PROC
+			MOV		A,30
+			MOV		DEL1,A
+DEL_1:  	MOV		A,30
+			MOV		DEL2,A
+DEL_2:		MOV		A,140
+			MOV		DEL3,A
+DEL_3:		SDZ		DEL3
+			JMP		DEL_3
+			SDZ		DEL2
+			JMP		DEL_2
+			SDZ		DEL1
+			JMP		DEL_1
+			RET
+DELAY		ENDP
+			END
